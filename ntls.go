@@ -167,21 +167,27 @@ func (l *Listener) acceptFakeTLS() (net.Conn, error) {
 			return nil, err
 		}
 
-		// 读取前16字节判断是否是加密knock
-		peekBuf := make([]byte, 16)
+		// Peek ClientHello解析SessionID
+		peekBuf := make([]byte, 1024)
 		conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-		n, err := io.ReadFull(conn, peekBuf)
+		n, err := conn.Read(peekBuf)
 		conn.SetReadDeadline(time.Time{})
-		if err != nil || n < 16 {
+		if err != nil || n < 44 {
 			conn.Close()
 			continue
 		}
 
-		// 比较knock（constant-time）
-		isOurs := subtle.ConstantTimeCompare(peekBuf[:16], knock) == 1
+		// 解析SessionID检查knock
+		isOurs := false
+		if n >= 44 && peekBuf[0] == 22 { // TLS Handshake
+			sidLen := int(peekBuf[43])
+			if sidLen >= 16 && 44+sidLen <= n {
+				sid := peekBuf[44 : 44+sidLen]
+				isOurs = subtle.ConstantTimeCompare(sid[:16], knock) == 1
+			}
+		}
 
 		if !isOurs {
-			// 不是我们的 → 原始数据转发到真实服务器（真实证书）
 			go proxyToRealWithData(conn, peekBuf[:n], l.cfg.SNI)
 			continue
 		}
@@ -319,15 +325,17 @@ func dialFakeTLS(addr string, cfg *Config, psk []byte) (net.Conn, error) {
 		return nil, err
 	}
 
-	// 发送加密knock（16字节，看起来像随机数据）
-	knock := realityKnock(psk)
-	rawConn.Write(knock) // 16字节加密标记
+	// 零字节Reality: knock藏入ClientHello SessionID
+	signal := realityKnock(psk)
+	sessionID := make([]byte, 32)
+	copy(sessionID[:16], signal)
+	rand.Read(sessionID[16:])
 
-	// uTLS Chrome指纹TLS
 	utlsCfg := &utls.Config{
 		ServerName: sni, InsecureSkipVerify: true,
 	}
 	utlsConn := utls.UClient(rawConn, utlsCfg, utls.HelloChrome_Auto)
+	utlsConn.HandshakeState.Hello.SessionId = sessionID
 	if err := utlsConn.Handshake(); err != nil {
 		rawConn.Close()
 		return nil, err
