@@ -87,6 +87,8 @@ func DialWS(addr string, cfg *Config) (net.Conn, error) {
 
 	dialer := websocket.Dialer{
 		HandshakeTimeout: 10 * time.Second,
+		ReadBufferSize:  64 * 1024,
+		WriteBufferSize: 64 * 1024,
 	}
 
 	header := http.Header{}
@@ -102,6 +104,7 @@ func DialWS(addr string, cfg *Config) (net.Conn, error) {
 	}
 
 	conn := &wsConn{ws: ws}
+	conn.startKeepalive()
 
 	// PSK认证
 	psk := deriveKey(cfg.Password)
@@ -147,6 +150,8 @@ func ListenWS(addr string, cfg *Config) (*WSListener, error) {
 
 	upgrader := websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool { return true },
+		ReadBufferSize:  64 * 1024,
+		WriteBufferSize: 64 * 1024,
 	}
 
 	mux := http.NewServeMux()
@@ -156,6 +161,7 @@ func ListenWS(addr string, cfg *Config) (*WSListener, error) {
 			return
 		}
 		conn := &wsConn{ws: ws}
+	conn.startKeepalive()
 
 		// PSK验证
 		if err := serverAuth(conn, wsl.psk); err != nil {
@@ -188,3 +194,16 @@ func (l *WSListener) Accept() (net.Conn, error) {
 
 func (l *WSListener) Addr() net.Addr { return l.ln.Addr() }
 func (l *WSListener) Close() error   { close(l.connCh); return l.ln.Close() }
+
+// startKeepalive WebSocket心跳
+func (c *wsConn) startKeepalive() {
+	go func() {
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			if err := c.ws.WriteControl(websocket.PingMessage, nil, time.Now().Add(5*time.Second)); err != nil {
+				return
+			}
+		}
+	}()
+}
