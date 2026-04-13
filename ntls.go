@@ -27,14 +27,18 @@ import (
 
 // Config nTLS配置
 type Config struct {
-	Password string // PSK密码
-	Mode     string // none / tls / fake-tls
-	SNI      string // fake-tls: 代理目标 / tls: 证书CN
-	CertMode string // tls模式: self(默认) / file / acme
-	CertFile string // file模式: 证书路径
-	KeyFile  string // file模式: 私钥路径
-	ACMEHost string // acme模式: 域名
+	Password string    // PSK密码
+	Mode     string    // none / tls / fake-tls / ws
+	SNI      string    // fake-tls: 代理目标 / tls: 证书CN
+	CertMode string    // tls模式: self(默认) / file / acme
+	CertFile string    // file模式: 证书路径
+	KeyFile  string    // file模式: 私钥路径
+	ACMEHost string    // acme模式: 域名
 	WS       *WSConfig // ws模式配置
+
+	// Pro 特性
+	UseUTLS    bool      // 客户端用Chrome指纹TLS
+	FallbackCfg *Fallback // 回落配置 (portal/proxy/static)
 }
 
 // Listener nTLS服务端
@@ -164,8 +168,12 @@ func (l *Listener) acceptFakeTLS() (net.Conn, error) {
 
 		// TLS握手成功 → 检查PSK认证
 		if err := serverAuth(tlsConn, l.psk); err != nil {
-			// PSK验证失败 → 非认证客户端
-			tlsConn.Close()
+			// PSK失败 → 回落处理
+			if l.cfg.FallbackCfg != nil {
+				go l.cfg.FallbackCfg.Handle(tlsConn)
+			} else {
+				tlsConn.Close()
+			}
 			continue
 		}
 
@@ -224,10 +232,16 @@ func Dial(addr string, cfg *Config) (net.Conn, error) {
 			host, _, _ := net.SplitHostPort(addr)
 			sni = host
 		}
-		conn, err := tls.Dial("tcp", addr, &tls.Config{
-			ServerName:         sni,
-			InsecureSkipVerify: true,
-		})
+		var conn net.Conn
+		var err error
+		if cfg.UseUTLS {
+			conn, err = DialUTLS(addr, sni)
+		} else {
+			conn, err = tls.Dial("tcp", addr, &tls.Config{
+				ServerName:         sni,
+				InsecureSkipVerify: true,
+			})
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -252,11 +266,16 @@ func dialFakeTLS(addr string, cfg *Config, psk []byte) (net.Conn, error) {
 		host, _, _ := net.SplitHostPort(addr)
 		sni = host
 	}
-	// fake-tls客户端直接用TLS连接 + PSK认证
-	conn, err := tls.Dial("tcp", addr, &tls.Config{
-		ServerName:         sni,
-		InsecureSkipVerify: true,
-	})
+	var conn net.Conn
+	var err error
+	if cfg.UseUTLS {
+		conn, err = DialUTLS(addr, sni)
+	} else {
+		conn, err = tls.Dial("tcp", addr, &tls.Config{
+			ServerName:         sni,
+			InsecureSkipVerify: true,
+		})
+	}
 	if err != nil {
 		return nil, err
 	}
