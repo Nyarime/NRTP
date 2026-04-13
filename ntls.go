@@ -402,6 +402,9 @@ func mustSelfSign(cn string) tls.Certificate {
 // === PSK ===
 
 func deriveKey(password string) []byte {
+	if len(password) < 8 {
+		log.Printf("[NRTP] ⚠️ 密码过短(<%d字符)，推荐32+字节: openssl rand -hex 32", len(password))
+	}
 	h := sha256.Sum256([]byte("ntls:" + password))
 	return h[:]
 }
