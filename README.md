@@ -99,21 +99,32 @@ go get github.com/nyarime/nrtp@v1.1.0
 
 Modes: `none` / `tls` / `fake-tls` (fake-tls) / `ws` (WebSocket over TLS)
 
-## CDN Fronting (Cloudflare)
+
+## Cloudflare CDN
+
+服务端域名开启CF代理（橙色云朵），流量走CF CDN：
 
 ```go
+// 服务端
+cfg := &nrtp.Config{
+    Password: "secret",
+    Mode:     "ws",
+    CertMode: "acme",
+    ACMEHost: "ws.example.com",
+    WS:       &nrtp.WSConfig{Path: "/ws"},
+}
+listener, _ := nrtp.ListenWS(":443", cfg)
+
+// 客户端
 cfg := &nrtp.Config{
     Password: "secret",
     Mode:     "ws",
     WS: &nrtp.WSConfig{
         Path: "/ws",
-        SNI:  "www.visa.com",  // CF背后的域名
-        Headers: map[string]string{
-            "Host":       "your-real-domain.com",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-        },
+        SNI:  "ws.example.com",
     },
 }
+conn, _ := nrtp.DialWS("ws.example.com:443", cfg)
 ```
 
-DPI 看到: TLS SNI=www.visa.com + 正常Chrome流量
+CF设置: DNS A记录 → VPS IP，Proxy Status = Proxied（橙色）
