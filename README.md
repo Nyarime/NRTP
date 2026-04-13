@@ -18,7 +18,7 @@ go get github.com/nyarime/nrtp@v1.1.0
 |------|------|------|------|
 | `none` | ❌ | ❌ | 内网/测试 |
 | `tls` | ✅ | 自签名/文件/ACME | 专线 |
-| `fake-tls` | ✅ | Reality 代理到真实服务器 | 过墙 |
+| `fake-tls` | ✅ | 代理到真实服务器 | 过墙 |
 | `ws` | ✅ | WebSocket over TLS | CDN 友好 |
 
 ## 快速开始
@@ -40,7 +40,7 @@ conn, _ := nrtp.Dial("server:443", &nrtp.Config{
 })
 ```
 
-## fake-tls (Reality)
+## fake-tls (fake-tls)
 
 非认证访问转发到真实服务器，DPI 看到真实 VPN 在握手：
 
@@ -97,4 +97,4 @@ TCP transport with fake-tls, WebSocket disguise, and PSK auth. TCP counterpart t
 go get github.com/nyarime/nrtp@v1.1.0
 ```
 
-Modes: `none` / `tls` / `fake-tls` (Reality) / `ws` (WebSocket over TLS)
+Modes: `none` / `tls` / `fake-tls` (fake-tls) / `ws` (WebSocket over TLS)
