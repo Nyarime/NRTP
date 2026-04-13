@@ -9,7 +9,7 @@ TCP 传输协议，fake-tls + WebSocket 伪装 + PSK 认证。[NRUP](https://git
 ## 安装
 
 ```bash
-go get github.com/nyarime/nrtp@v1.1.0
+go get github.com/nyarime/nrtp@v1.4.0
 ```
 
 ## 四种模式
@@ -20,6 +20,7 @@ go get github.com/nyarime/nrtp@v1.1.0
 | `tls` | ✅ | 自签名/文件/ACME | 专线 |
 | `fake-tls` | ✅ | 代理到真实服务器 | 过墙 |
 | `ws` | ✅ | WebSocket over TLS | CDN 友好 |
+| `xhttp` | ✅ | HTTP streaming | CF CDN |
 
 ## 快速开始
 
@@ -94,7 +95,7 @@ Apache License 2.0
 TCP transport with fake-tls, WebSocket disguise, and PSK auth. TCP counterpart to [NRUP](https://github.com/Nyarime/NRUP).
 
 ```bash
-go get github.com/nyarime/nrtp@v1.1.0
+go get github.com/nyarime/nrtp@v1.4.0
 ```
 
 Modes: `none` / `tls` / `fake-tls` (fake-tls) / `ws` (WebSocket over TLS)
