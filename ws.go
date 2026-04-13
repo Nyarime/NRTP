@@ -2,6 +2,7 @@ package nrtp
 
 import (
 	"fmt"
+	"crypto/tls"
 	"net"
 	"net/http"
 	"sync"
@@ -87,6 +88,7 @@ func DialWS(addr string, cfg *Config) (net.Conn, error) {
 
 	dialer := websocket.Dialer{
 		HandshakeTimeout: 10 * time.Second,
+		TLSClientConfig:  &tls.Config{ServerName: sni, InsecureSkipVerify: true},
 		ReadBufferSize:  64 * 1024,
 		WriteBufferSize: 64 * 1024,
 	}
@@ -97,7 +99,7 @@ func DialWS(addr string, cfg *Config) (net.Conn, error) {
 		header.Set(k, v)
 	}
 
-	url := fmt.Sprintf("ws://%s%s", addr, path)
+	url := fmt.Sprintf("wss://%s%s", addr, path)
 	ws, _, err := dialer.Dial(url, header)
 	if err != nil {
 		return nil, fmt.Errorf("ws dial: %w", err)
@@ -136,7 +138,8 @@ func ListenWS(addr string, cfg *Config) (*WSListener, error) {
 	}
 
 
-	ln, err := net.Listen("tcp", addr)
+	tlsCfg, _ := makeTLSConfig(cfg)
+	ln, err := tls.Listen("tcp", addr, tlsCfg)
 	if err != nil {
 		return nil, err
 	}
