@@ -13,6 +13,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"crypto/tls"
+	utls "github.com/refraction-networking/utls"
 	"golang.org/x/crypto/acme/autocert"
 	"crypto/x509"
 	"crypto/x509/pkix"
@@ -150,46 +151,52 @@ func (l *Listener) Close() error {
 // acceptFakeTLS 检查ClientHello中的认证标记
 // 认证客户端 → 自己处理TLS → 代理模式
 // 非认证客户端 → 整个连接转发到真实服务器
+// realityKnock 生成暗号(前3字节PSK派生)
+func realityKnock(psk []byte) []byte {
+	h := sha256.Sum256(append([]byte("nrtp-knock:"), psk...))
+	return h[:3]
+}
+
 func (l *Listener) acceptFakeTLS() (net.Conn, error) {
+	knock := realityKnock(l.psk)
+
 	for {
 		conn, err := l.raw.Accept()
 		if err != nil {
 			return nil, err
 		}
 
-		// Peek前5字节判断TLS ClientHello
-		peekBuf := make([]byte, 5)
+		// Peek前3字节判断是否是我们的客户端
+		peekBuf := make([]byte, 3)
 		conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 		n, err := io.ReadFull(conn, peekBuf)
 		conn.SetReadDeadline(time.Time{})
-		if err != nil || n < 5 {
+		if err != nil || n < 3 {
 			conn.Close()
 			continue
 		}
 
-		// TLS ClientHello: type=22, version>=0x0301, length
-		isTLS := peekBuf[0] == 22 && peekBuf[1] >= 3
+		// 检查暗号
+		isOurs := peekBuf[0] == knock[0] && peekBuf[1] == knock[1] && peekBuf[2] == knock[2]
 
-		if !isTLS {
-			// 非TLS流量 → 直接转发到真实服务器（零污染）
+		if !isOurs {
+			// 不是我们的客户端 → 原始数据转发到真实服务器
+			// 真实服务器用真实证书完成TLS握手 → 完美指纹
 			go proxyToRealWithData(conn, peekBuf[:n], l.cfg.SNI)
 			continue
 		}
 
-		// 是TLS → 拼回已读数据 + 做自己的TLS握手
-		prefixed := &prefixConn{prefix: peekBuf[:n], Conn: conn}
+		// 是我们的客户端 → 自签名 TLS + PSK
 		tlsCfg := &tls.Config{
 			Certificates: []tls.Certificate{l.cert},
 			MinVersion:   tls.VersionTLS12,
 		}
-		tlsConn := tls.Server(prefixed, tlsCfg)
+		tlsConn := tls.Server(conn, tlsCfg)
 		if err := tlsConn.Handshake(); err != nil {
-			// TLS握手失败 → 转发到真实服务器
 			conn.Close()
 			continue
 		}
 
-		// PSK认证
 		if err := serverAuth(tlsConn, l.psk); err != nil {
 			if l.cfg.FallbackCfg != nil {
 				go l.cfg.FallbackCfg.Handle(tlsConn)
@@ -305,15 +312,34 @@ func dialFakeTLS(addr string, cfg *Config, psk []byte) (net.Conn, error) {
 		host, _, _ := net.SplitHostPort(addr)
 		sni = host
 	}
+	// 先建TCP + 发暗号
+	rawConn, err := net.DialTimeout("tcp", addr, 10*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	knock := realityKnock(psk)
+	rawConn.Write(knock)
+
+	// TLS握手
 	var conn net.Conn
-	var err error
 	if cfg.UseUTLS {
-		conn, err = DialUTLS(addr, sni, cfg.UTLSFingerprint)
+		utlsConn := utls.UClient(rawConn, &utls.Config{
+			ServerName: sni, InsecureSkipVerify: true,
+		}, utls.HelloChrome_Auto)
+		if err := utlsConn.Handshake(); err != nil {
+			rawConn.Close()
+			return nil, err
+		}
+		conn = utlsConn
 	} else {
-		conn, err = tls.Dial("tcp", addr, &tls.Config{
-			ServerName:         sni,
-			InsecureSkipVerify: true,
+		tlsConn := tls.Client(rawConn, &tls.Config{
+			ServerName: sni, InsecureSkipVerify: true,
 		})
+		if err := tlsConn.Handshake(); err != nil {
+			rawConn.Close()
+			return nil, err
+		}
+		conn = tlsConn
 	}
 	if err != nil {
 		return nil, err
