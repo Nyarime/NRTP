@@ -30,9 +30,11 @@ import (
 type Config struct {
 	Password string // PSK密码
 	Mode     string // none / tls / fake-tls
-	SNI      string // fake-tls: 代理目标 (e.g. vpn2fa.hku.hk)
-	CertFile string // tls: 自定义证书
-	KeyFile  string // tls: 自定义私钥
+	SNI      string // fake-tls: 代理目标 / tls: 证书CN
+	CertMode string // tls模式: self(默认) / file / acme
+	CertFile string // file模式: 证书路径
+	KeyFile  string // file模式: 私钥路径
+	ACMEHost string // acme模式: 域名
 }
 
 // Listener nTLS服务端
@@ -376,17 +378,37 @@ func (c *realitySessionCache) Put(sessionKey string, cs *tls.ClientSessionState)
 // === 证书 ===
 
 func makeTLSConfig(cfg *Config) (*tls.Config, error) {
-	if cfg.CertFile != "" && cfg.KeyFile != "" {
+	certMode := cfg.CertMode
+	if certMode == "" { certMode = "self" }
+
+	switch certMode {
+	case "file":
+		if cfg.CertFile == "" || cfg.KeyFile == "" {
+			return nil, errors.New("file模式需要CertFile和KeyFile")
+		}
 		cert, err := tls.LoadX509KeyPair(cfg.CertFile, cfg.KeyFile)
 		if err != nil {
 			return nil, err
 		}
+		log.Printf("[nTLS] tls模式: 自定义证书")
+		return &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12}, nil
+
+	case "acme":
+		if cfg.ACMEHost == "" {
+			return nil, errors.New("acme模式需要ACMEHost")
+		}
+		// TODO: golang.org/x/crypto/acme/autocert 集成
+		log.Printf("[nTLS] tls模式: ACME %s (待实现，回退自签名)", cfg.ACMEHost)
+		cert := mustSelfSign(cfg.ACMEHost)
+		return &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12}, nil
+
+	default: // self
+		cn := cfg.SNI
+		if cn == "" { cn = "localhost" }
+		cert := mustSelfSign(cn)
+		log.Printf("[nTLS] tls模式: 自签名 CN=%s", cn)
 		return &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12}, nil
 	}
-	cn := cfg.SNI
-	if cn == "" { cn = "localhost" }
-	cert := mustSelfSign(cn)
-	return &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12}, nil
 }
 
 func mustSelfSign(cn string) tls.Certificate {
