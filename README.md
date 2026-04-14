@@ -27,18 +27,27 @@ go get github.com/nyarime/nrtp@v1.4.0
 ```go
 import "github.com/nyarime/nrtp"
 
-// 服务端（TLS 模式）
-listener, _ := nrtp.Listen(":443", &nrtp.Config{
-    Password: "secret",
-    Mode:     "tls",
-})
-conn, _ := listener.Accept()
+// TLS（专线加密）
+cfg := &nrtp.Config{Password: "secret", Mode: "tls"}
 
-// 客户端
-conn, _ := nrtp.Dial("server:443", &nrtp.Config{
-    Password: "secret",
-    Mode:     "tls",
-})
+// fake-tls（Zero-Byte Reality，过墙推荐）
+cfg := &nrtp.Config{Password: "secret", Mode: "fake-tls",
+    SNI: "vpn2fa.hku.hk", UseUTLS: true}
+
+// WebSocket（CDN友好）
+cfg := &nrtp.Config{Password: "secret", Mode: "ws",
+    WS: &nrtp.WSConfig{Path: "/ws"}}
+
+// XHTTP（CF CDN）
+cfg := &nrtp.Config{Password: "secret", Mode: "xhttp",
+    XHTTP: &nrtp.XHTTPConfig{Path: "/stream"}}
+
+// none（内网）
+cfg := &nrtp.Config{Password: "secret", Mode: "none"}
+
+// 通用
+listener, _ := nrtp.Listen(":443", cfg)
+conn, _ := nrtp.Dial("server:443", cfg)
 ```
 
 ## fake-tls (Reality)
