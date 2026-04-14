@@ -18,7 +18,7 @@ go get github.com/nyarime/nrtp@v1.4.0
 |------|------|------|------|
 | `none` | ❌ | ❌ | 内网/测试 |
 | `tls` | ✅ | 自签名/文件/ACME | 专线 |
-| `fake-tls` | ✅ | Reality (暗号+真实证书转发) | 过墙 |
+| `fake-tls` | ✅ | Zero-Byte Reality (SessionID认证) | 过墙 |
 | `ws` | ✅ | WebSocket over TLS | CDN 友好 |
 | `xhttp` | ✅ | HTTP streaming | CF CDN |
 
@@ -43,9 +43,9 @@ conn, _ := nrtp.Dial("server:443", &nrtp.Config{
 
 ## fake-tls (Reality)
 
-客户端发3字节PSK暗号，服务端区分：
-- 我们的客户端 → 自签名TLS + 代理
-- 真实客户端/GFW探测 → 转发到真实服务器（真实证书）
+认证信息藏入TLS ClientHello SessionID（零额外字节）：
+- SessionID匹配 → 自签名TLS + 代理
+- 不匹配 → 转发到真实服务器（真实证书+HMAC防重放）
 
 非认证访问转发到真实服务器，DPI 看到真实 VPN 在握手：
 
