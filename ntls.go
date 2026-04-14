@@ -61,6 +61,20 @@ func Listen(addr string, cfg *Config) (*Listener, error) {
 	if cfg.Mode == "" {
 		cfg.Mode = "tls"
 	}
+
+	// v1.4.1: PSK校验 + 启动日志
+	if len(cfg.Password) < 8 {
+		log.Printf("[NRTP] ⚠️ 密码过短(%d字符)，推荐≥32字节: openssl rand -hex 32", len(cfg.Password))
+	}
+	if len(cfg.Password) == 0 {
+		return nil, errors.New("密码不能为空")
+	}
+	log.Printf("[NRTP] 启动 mode=%s addr=%s psk=%dB", cfg.Mode, addr, len(cfg.Password))
+	if cfg.UseUTLS {
+		fp := cfg.UTLSFingerprint; if fp == "" { fp = "chrome" }
+		log.Printf("[NRTP] uTLS=%s", fp)
+	}
+
 	psk := deriveKey(cfg.Password)
 
 	switch cfg.Mode {
@@ -291,6 +305,9 @@ func proxyToRealWithData(client net.Conn, firstData []byte, sni string) {
 func Dial(addr string, cfg *Config) (net.Conn, error) {
 	if cfg.Mode == "" {
 		cfg.Mode = "tls"
+	}
+	if len(cfg.Password) == 0 {
+		return nil, errors.New("密码不能为空")
 	}
 	psk := deriveKey(cfg.Password)
 
