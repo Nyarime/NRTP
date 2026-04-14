@@ -77,6 +77,16 @@ func Listen(addr string, cfg *Config) (*Listener, error) {
 
 	psk := deriveKey(cfg.Password)
 
+	// v1.4.2: 配置校验
+	switch cfg.Mode {
+	case "fake-tls":
+		if cfg.SNI == "" { return nil, errors.New("fake-tls需要SNI") }
+	case "ws":
+		if cfg.WS == nil || cfg.WS.Path == "" { return nil, errors.New("ws需要WS.Path") }
+	case "xhttp":
+		if cfg.XHTTP == nil || cfg.XHTTP.Path == "" { return nil, errors.New("xhttp需要XHTTP.Path") }
+	}
+
 	switch cfg.Mode {
 	case "none":
 		// 纯TCP
