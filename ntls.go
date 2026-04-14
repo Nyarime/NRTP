@@ -118,7 +118,6 @@ func Listen(addr string, cfg *Config) (*Listener, error) {
 		}
 		log.Printf("[nTLS] 模式: fake-tls → %s (fake-tls)", cfg.SNI)
 		return &Listener{raw: ln, psk: psk, cfg: cfg, cert: mustSelfSign(cfg.SNI)}, nil
-		return &Listener{raw: ln, psk: psk, cfg: cfg}, nil
 
 	default:
 		return nil, fmt.Errorf("unknown mode: %s", cfg.Mode)
