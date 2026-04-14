@@ -64,7 +64,7 @@ func Listen(addr string, cfg *Config) (*Listener, error) {
 
 	// v1.4.1: PSK校验 + 启动日志
 	if len(cfg.Password) < 8 {
-		log.Printf("[NRTP] ⚠️ 密码过短(%d字符)，推荐≥32字节: openssl rand -hex 32", len(cfg.Password))
+		log.Printf("[NRTP] ⚠️ WARNING: 密码过短(%d字符)，推荐≥32字节: openssl rand -hex 32", len(cfg.Password))
 	}
 	if len(cfg.Password) == 0 {
 		return nil, errors.New("密码不能为空")
@@ -420,7 +420,7 @@ func mustSelfSign(cn string) tls.Certificate {
 
 func deriveKey(password string) []byte {
 	if len(password) < 8 {
-		log.Printf("[NRTP] ⚠️ 密码过短(<%d字符)，推荐32+字节: openssl rand -hex 32", len(password))
+		log.Printf("[NRTP] ⚠️ WARNING: 密码过短(<%d字符)，推荐32+字节: openssl rand -hex 32", len(password))
 	}
 	h := sha256.Sum256([]byte("ntls:" + password))
 	return h[:]
@@ -474,7 +474,7 @@ func makeTLSConfig(cfg *Config) (*tls.Config, error) {
 			HostPolicy: autocert.HostWhitelist(host),
 			Cache:      autocert.DirCache(".nrtp-certs"),
 		}
-		log.Printf("[NRTP] ACME: %s", host)
+		log.Printf("[NRTP] ACME: %s (缓存: .nrtp-certs/)", host)
 		return m.TLSConfig(), nil
 	default:
 		cn := cfg.SNI
