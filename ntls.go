@@ -389,7 +389,18 @@ func dialFakeTLS(addr string, cfg *Config, psk []byte) (net.Conn, error) {
 		ServerName: sni, InsecureSkipVerify: true,
 	}
 	utlsConn := utls.UClient(rawConn, utlsCfg, utls.HelloChrome_Auto)
-	utlsConn.HandshakeState.Hello.SessionId = sessionID
+	// Build → 注入SessionID → MarshalClientHello → HandshakeContext
+	if err := utlsConn.BuildHandshakeState(); err != nil {
+		rawConn.Close()
+		return nil, err
+	}
+	// 在marshaled之前注入SessionID
+	hello := utlsConn.HandshakeState.Hello
+	hello.SessionId = sessionID
+	if err := utlsConn.MarshalClientHello(); err != nil {
+		rawConn.Close()
+		return nil, err
+	}
 	if err := utlsConn.Handshake(); err != nil {
 		rawConn.Close()
 		return nil, err
