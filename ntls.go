@@ -239,8 +239,11 @@ func (l *Listener) acceptFakeTLS() (net.Conn, error) {
 
 		log.Printf("[Reality] isOurs=%v n=%d peek[0]=%d", isOurs, n, peekBuf[0])
 		if !isOurs {
-			if l.cfg.FallbackCfg != nil {
-				// 本地Portal回落 (serve embed模板)
+			if l.cfg.SNI != "" {
+				// Reality模式: 反代源站(真证书+真内容)
+				go proxyToRealWithData(conn, peekBuf[:n], l.cfg.SNI)
+			} else if l.cfg.FallbackCfg != nil {
+				// 非Reality: 本地Portal(自签证书)
 				prefixed := &prefixConn{prefix: peekBuf[:n], Conn: conn}
 				tlsCfg := ciscoASATLSConfig(l.cert)
 				tlsConn := tls.Server(prefixed, tlsCfg)
@@ -250,8 +253,7 @@ func (l *Listener) acceptFakeTLS() (net.Conn, error) {
 					conn.Close()
 				}
 			} else {
-				// 无FallbackCfg → proxyToReal(真证书)
-				go proxyToRealWithData(conn, peekBuf[:n], l.cfg.SNI)
+				conn.Close()
 			}
 			continue
 		}
