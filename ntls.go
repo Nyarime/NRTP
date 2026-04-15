@@ -255,9 +255,12 @@ func (l *Listener) acceptFakeTLS() (net.Conn, error) {
 			continue
 		}
 
-		// 是我们的 → 拼回数据 + 自签名TLS
+		// 是我们的 → 拼回数据 + 自签名TLS (不限TLS版本)
 		prefixed := &prefixConn{prefix: peekBuf[:n], Conn: conn}
-		tlsCfg := ciscoASATLSConfig(l.cert)
+		tlsCfg := &tls.Config{
+			Certificates: []tls.Certificate{l.cert},
+			MinVersion:   tls.VersionTLS12,
+		}
 		tlsConn := tls.Server(prefixed, tlsCfg)
 		if err := tlsConn.Handshake(); err != nil {
 			conn.Close()
@@ -522,18 +525,16 @@ func ciscoASATLSConfig(cert tls.Certificate) *tls.Config {
 	return &tls.Config{
 		Certificates: []tls.Certificate{cert},
 		MinVersion:   tls.VersionTLS12,
-		MaxVersion:   tls.VersionTLS12, // ASA通常TLS1.2
+		// TLS1.2+1.3都支持(GFW探测可能用TLS1.3)
 		CipherSuites: []uint16{
-			// Cisco ASA FIPS偏好顺序 (从vpn.sjsu.edu实测)
+			// Cisco ASA FIPS偏好 + ECDSA兼容(自签证书)
+			tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
 			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
 			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
 			tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
 			tls.TLS_RSA_WITH_AES_128_GCM_SHA256,
-			tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
-			tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
-			tls.TLS_RSA_WITH_AES_256_CBC_SHA,
-			tls.TLS_RSA_WITH_AES_128_CBC_SHA,
-			// 故意不包含ChaCha20-Poly1305 (ASA不支持)
+			// 不含ChaCha20-Poly1305
 		},
 		CurvePreferences: []tls.CurveID{
 			tls.X25519,
