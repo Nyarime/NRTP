@@ -239,19 +239,9 @@ func (l *Listener) acceptFakeTLS() (net.Conn, error) {
 
 		log.Printf("[Reality] isOurs=%v n=%d peek[0]=%d", isOurs, n, peekBuf[0])
 		if !isOurs {
-			if l.cfg.FallbackCfg != nil {
-				// v1.5.3: 回落Portal (同端口)
-				prefixed := &prefixConn{prefix: peekBuf[:n], Conn: conn}
-				tlsCfg := ciscoASATLSConfig(l.cert)
-				tlsConn := tls.Server(prefixed, tlsCfg)
-				if err := tlsConn.Handshake(); err == nil {
-					go l.cfg.FallbackCfg.Handle(tlsConn)
-				} else {
-					conn.Close()
-				}
-			} else {
-				go proxyToRealWithData(conn, peekBuf[:n], l.cfg.SNI)
-			}
+			// Reality: 偷真实服务器的证书和响应
+			// proxyToReal让GFW看到100%真实的证书+内容
+			go proxyToRealWithData(conn, peekBuf[:n], l.cfg.SNI)
 			continue
 		}
 
