@@ -1,6 +1,7 @@
 package nrtp
 
 import (
+	"log"
 	"bufio"
 	"bytes"
 	"fmt"
@@ -55,7 +56,7 @@ func serveHTTPOnConn(conn net.Conn, handler http.Handler) {
 		
 		resp := fmt.Sprintf("HTTP/1.1 %d %s\r\n", code, http.StatusText(code))
 		rw.header.Set("Content-Length", fmt.Sprintf("%d", rw.body.Len()))
-		rw.header.Set("Connection", "close")
+		// keep-alive
 		for k, vs := range rw.header {
 			for _, v := range vs {
 				resp += fmt.Sprintf("%s: %s\r\n", k, v)
@@ -64,7 +65,7 @@ func serveHTTPOnConn(conn net.Conn, handler http.Handler) {
 		resp += "\r\n"
 		conn.Write([]byte(resp))
 		conn.Write(rw.body.Bytes())
-		return // Connection: close
+		// keep-alive: 继续处理下一个请求
 	}
 }
 

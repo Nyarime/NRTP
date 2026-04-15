@@ -144,16 +144,24 @@ func (l *Listener) Accept() (net.Conn, error) {
 			if err != nil {
 				return nil, err
 			}
-			// 先peek 32字节判断是否PSK认证
-			peekBuf := make([]byte, 32)
-			conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-			n, err := io.ReadFull(conn, peekBuf)
+			// 先读4字节快速判断
+			head := make([]byte, 4)
+			conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+			n, _ := io.ReadFull(conn, head)
 			conn.SetReadDeadline(time.Time{})
 			
-			if err != nil || n < 32 {
-				// 读取失败(可能是HTTP请求) → Portal回落
+			if n < 4 {
+				conn.Close()
+				continue
+			}
+			
+			h := string(head[:4])
+			isHTTP := h == "GET " || h == "POST" || h == "HEAD" || h == "PUT " || h == "DELE" || h == "OPTI"
+			
+			if isHTTP {
+				// HTTP请求 → Portal回落
 				if l.cfg.FallbackCfg != nil {
-					wrapped := &prefixConn{prefix: peekBuf[:n], Conn: conn}
+					wrapped := &prefixConn{prefix: head[:n], Conn: conn}
 					go l.cfg.FallbackCfg.Handle(wrapped)
 				} else {
 					conn.Close()
@@ -161,20 +169,28 @@ func (l *Listener) Accept() (net.Conn, error) {
 				continue
 			}
 			
-			expected := sha256.Sum256(l.psk)
-			if subtle.ConstantTimeCompare(peekBuf, expected[:]) != 1 {
-				// PSK不对 → Portal回落(把已读数据拼回)
-				if l.cfg.FallbackCfg != nil {
-					wrapped := &prefixConn{prefix: peekBuf[:n], Conn: conn}
-					go l.cfg.FallbackCfg.Handle(wrapped)
-				} else {
-					conn.Close()
+			// 可能是PSK: 继续读剩余28字节
+			rest := make([]byte, 28)
+			conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+			n2, _ := io.ReadFull(conn, rest)
+			conn.SetReadDeadline(time.Time{})
+			
+			pskBuf := append(head[:n], rest[:n2]...)
+			if len(pskBuf) == 32 {
+				expected := sha256.Sum256(l.psk)
+				if subtle.ConstantTimeCompare(pskBuf, expected[:]) == 1 {
+					conn.Write([]byte{0x01})
+					return conn, nil
 				}
-				continue
 			}
 			
-			conn.Write([]byte{0x01}) // ACK
-			return conn, nil
+			// PSK不对 → Portal
+			if l.cfg.FallbackCfg != nil {
+				wrapped := &prefixConn{prefix: pskBuf, Conn: conn}
+				go l.cfg.FallbackCfg.Handle(wrapped)
+			} else {
+				conn.Close()
+			}
 		}
 
 	case "fake-tls":
