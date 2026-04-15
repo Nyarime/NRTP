@@ -1,7 +1,6 @@
 package nrtp
 
 import (
-	"log"
 	"bufio"
 	"bytes"
 	"fmt"
